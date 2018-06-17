@@ -1,5 +1,6 @@
 package database;
 
+import http.DateTimeConverter;
 import http.HttpPageHandler;
 import org.apache.commons.dbcp2.BasicDataSource;
 
@@ -14,7 +15,7 @@ public class DataBaseUtilities {
     BasicDataSource dataSource;
     HttpPageHandler httpPageHandler;
     final String updateRequest = "update pages set lastScanDate = current_timestamp() where id = ?;";
-    final String insertRequest = "insert ignore into pages (url, siteID) values (?, ?);";
+    final String insertRequest = "insert ignore into pages (url, siteID, foundDateTime) values (?, ?, ?);";
 
     public DataBaseUtilities() {
         dataSource = DataSource.getDataSource();
@@ -40,6 +41,7 @@ public class DataBaseUtilities {
                     if (httpPageHandler.getHttpUtilities().siteAvailable(url)) {
                         insertStatement.setString(1, url);
                         insertStatement.setInt(2, siteId);
+                        insertStatement.setString(3, DateTimeConverter.convertDateToString(new Date()));
                         insertStatement.addBatch();
                     }
                     updateStatement.setInt(1, pageId);
@@ -83,6 +85,7 @@ public class DataBaseUtilities {
                 for (String sitemap : rootSitemaps) {
                     insertStatement.setString(1, sitemap);
                     insertStatement.setInt(2, siteId);
+                    insertStatement.setString(3, DateTimeConverter.convertDateToString(new Date()));
                     insertStatement.addBatch();
                 }
                 updateStatement.setInt(1, pageId);
@@ -111,9 +114,10 @@ public class DataBaseUtilities {
                     int pageId = resultSet.getInt("ID");
                     int siteId = resultSet.getInt("siteID");
                     Map<String, Date> ulrs = httpPageHandler.wrapper(url);
-                    for (String itemUrl : ulrs.keySet()) {
-                        insertStatement.setString(1, itemUrl);
+                    for (Map.Entry<String, Date> urlDate : ulrs.entrySet()) {
+                        insertStatement.setString(1, urlDate.getKey());
                         insertStatement.setInt(2, siteId);
+                        insertStatement.setString(3, DateTimeConverter.convertDateToString(urlDate.getValue()));
                         insertStatement.addBatch();
                         count++;
                         if (count == 1000) {
