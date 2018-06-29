@@ -16,6 +16,7 @@ public class DataSource {
             dataSource.setUrl(URL);
             dataSource.setUsername(USER);
             dataSource.setPassword(PASSWORD);
+            dataSource.setMaxTotal(10);
             dataSource.setMinIdle(5);
             dataSource.setMaxIdle(10);
         }
