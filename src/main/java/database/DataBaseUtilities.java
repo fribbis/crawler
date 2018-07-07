@@ -4,217 +4,53 @@ import com.mongodb.MongoClient;
 import com.mongodb.MongoException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
-
-import http.DateTimeConverter;
+import com.mongodb.client.model.UpdateOptions;
 import http.HttpPageHandler;
 import http.PageParser;
-import org.apache.commons.dbcp2.BasicDataSource;
 import org.bson.Document;
+import org.bson.conversions.Bson;
 
 import java.io.IOException;
-import java.sql.*;
+import java.sql.SQLException;
 import java.util.*;
-import java.util.Date;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.mongodb.client.model.Filters.*;
+import static com.mongodb.client.model.Updates.set;
 
 public class DataBaseUtilities {
 
-    private BasicDataSource dataSource;
+
     private HttpPageHandler httpPageHandler;
-    private final String updateRequest = "update pages set lastScanDate = current_timestamp() where id = ?;";
-    private final String insertRequest = "insert ignore into pages (url, siteID, foundDateTime) values (?, ?, ?);";
-    private int count = 0;
+    private AtomicInteger count;
 
     public DataBaseUtilities() {
-        dataSource = DataSource.getDataSource();
         httpPageHandler = new HttpPageHandler();
     }
 
     public void addRobotsTxt() {
-        Set<Integer> siteIds = getSiteIdWithOneRowInPages();
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement updateStatement = connection.prepareStatement(updateRequest);
-             PreparedStatement insertStatement = connection.prepareStatement(insertRequest)) {
-            for (Integer siteId : siteIds) {
-                try (ResultSet resultSet = getIdUrlFromPagesBySideId(connection, siteId)) {
-                    while (resultSet.next()) {
-                        String url = resultSet.getString("URL") + "/robots.txt";
-                        int pageId = resultSet.getInt("ID");
-                        if (httpPageHandler.getHttpUtilities().siteAvailable(url)) {
-                            insertRowToPages(insertStatement, siteId, url, new Date());
-                        }
-                        updateLastScanDateFromPages(updateStatement, pageId);
-                    }
-                }
-            }
-            updateStatement.executeBatch();
-            insertStatement.executeBatch();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private ResultSet getIdUrlFromPagesBySideId(Connection connection, int siteId) throws SQLException {
-        final String selectRequest = "select ID, URL from pages where siteID = ? and lastScanDate is NULL;";
-        PreparedStatement selectStatement = connection.prepareStatement(selectRequest);
-        selectStatement.setInt(1, siteId);
-        return selectStatement.executeQuery();
-    }
-
-    private void insertRowToPages(PreparedStatement preparedStatement, int siteId, String url, Date date) throws SQLException {
-        preparedStatement.setString(1, url);
-        preparedStatement.setInt(2, siteId);
-        preparedStatement.setString(3, DateTimeConverter.convertDateToString(date));
-        preparedStatement.addBatch();
-    }
-
-    private void updateLastScanDateFromPages(PreparedStatement preparedStatement, int pageId) throws SQLException {
-        preparedStatement.setInt(1, pageId);
-        preparedStatement.addBatch();
-    }
-
-    private Set<Integer> getSiteIdWithOneRowInPages() {
-        final String countRequest = "select sites.ID, count(*) from sites, pages where pages.siteID = sites.ID group by sites.ID having count(*) = 1;";
-        Set<Integer> siteIDs = new HashSet<>();
-        try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(countRequest)) {
-            while (resultSet.next()) {
-                siteIDs.add(resultSet.getInt("ID"));
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-        return siteIDs;
-    }
-
-    public void addRootSitemaps() {
-        final String selectRequest = "select ID, siteID, URL from pages where URL like \"%robots.txt\" and lastScanDate is NULL";
-        try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement();
-             PreparedStatement updateStatement = connection.prepareStatement(updateRequest);
-             PreparedStatement insertStatement = connection.prepareStatement(insertRequest);
-             ResultSet resultSet = statement.executeQuery(selectRequest)) {
-            while (resultSet.next()) {
-                String url = resultSet.getString("URL");
-                int pageId = resultSet.getInt("ID");
-                int siteId = resultSet.getInt("siteID");
-                Set<String> rootSitemaps = httpPageHandler.getRootSitemaps(url);
-                for (String sitemap : rootSitemaps) {
-                    insertRowToPages(insertStatement, siteId, sitemap, new Date());
-                }
-                updateLastScanDateFromPages(updateStatement, pageId);
-            }
-            updateStatement.executeBatch();
-            insertStatement.executeBatch();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void addSitemapsAndArticles() {
-        final String selectRequest = "select ID, siteID, URL from pages where URL like \"%sitemap%\" and lastScanDate is NULL;";
-        try (Connection connection1 = dataSource.getConnection();
-             Statement statement = connection1.createStatement()) {
-            count = 0;
-            ResultSet resultSet;
-            ExecutorService service = Executors.newFixedThreadPool(10);
-            do {
-                resultSet = statement.executeQuery(selectRequest);
-                resultSet.last();
-                CountDownLatch latch = new CountDownLatch(resultSet.getRow());
-                resultSet.beforeFirst();
-                while (resultSet.next()) {
-                    String url = resultSet.getString("URL");
-                    int pageId = resultSet.getInt("ID");
-                    int siteId = resultSet.getInt("siteID");
-                    service.submit(() -> {
-                        System.out.println(Thread.currentThread().getName());
-                        try (Connection connection2 = dataSource.getConnection();
-                             PreparedStatement updateStatement = connection2.prepareStatement(updateRequest);
-                             PreparedStatement insertStatement = connection2.prepareStatement(insertRequest)) {
-                            Map<String, Date> ulrs = httpPageHandler.wrapper(url);
-                            for (Map.Entry<String, Date> urlDate : ulrs.entrySet()) {
-                                insertRowToPages(insertStatement, siteId, urlDate.getKey(), urlDate.getValue());
-                                count++;
-                                if (count == 1000) {
-                                    insertStatement.executeBatch();
-                                    insertStatement.clearBatch();
-                                    count = 0;
-                                }
-                            }
-                            if (count > 0) insertStatement.executeBatch();
-                            updateStatement.setInt(1, pageId);
-                            updateStatement.execute();
-                        } catch (SQLException e) {
-                            e.printStackTrace();
-                        } finally {
-                            latch.countDown();
-                        }
-                    });
-                }
-                try {
-                    latch.await();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            } while (resultSet.isAfterLast());
-            service.shutdown();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-    }
-
-    ResultSet getIdAndUrlFromPages(Connection connection, int start, int count) throws SQLException {
-        final String selectRequest = "select v1.id, v1.url from pages as v1 inner join (select * from pages " +
-                "where url not like \"%sitemap%\" and url not like \"%robots.txt%\" LIMIT ?, ?) as v2 on " +
-                "v1.id = v2.id and v1.lastScanDate is NULL;";
-        PreparedStatement selectStatement = connection.prepareStatement(selectRequest);
-        selectStatement.setInt(1, start);
-        selectStatement.setInt(2, count);
-        return selectStatement.executeQuery();
-    }
-
-    public void fillMongoDb() {
-        int countOfPage = getCountOfPages();
-        MongoClient mongoClient = new MongoClient("localhost");
-        MongoDatabase database = mongoClient.getDatabase("urlwordsrate");
-        MongoCollection<Document> collection = database.getCollection("ratingTest");
-        ExecutorService service = Executors.newFixedThreadPool(100);
-        CountDownLatch latch = new CountDownLatch(countOfPage / 10000);
-        PageParser pageParser = new PageParser();
-        for (count = 0; count <= countOfPage; count += 10000) {
-            final int ttt = count;
+        LinkedList<Site> sites = new SiteDAOImp().findAll();
+        PageDAO pageDAO = new PageDAOImp();
+        ExecutorService service = Executors.newFixedThreadPool(10);
+        CountDownLatch latch = new CountDownLatch(sites.size());
+        while (sites.size() != 0) {
+            Site site = sites.pop();
             service.submit(() -> {
-                System.out.println(Thread.currentThread().getName());
-                System.out.println(Thread.activeCount());
-                try (Connection connection = dataSource.getConnection();
-                     PreparedStatement updateStatement = connection.prepareStatement(updateRequest);
-                     ResultSet resultSet = getIdAndUrlFromPages(connection, ttt, 10000)) {
-                    while (resultSet.next()) {
-                        int pageId = resultSet.getInt("ID");
-                        String url = resultSet.getString("URL");
-                        try {
-                            Map<String, Integer> map = pageParser.countWords(url);
-                            //System.out.printf("%d - %s - %b\n", pageId, url, !map.isEmpty());
-                            Document doc = new Document("_id", pageId).append("words", new Document());
-                            map.forEach((key, value) -> doc.get("words", new Document()).append(key, value));
-                            try {
-                                collection.insertOne(doc);
-                                System.out.printf("%d %s - added\n", pageId, url);
-                            } catch (MongoException e) {
-                                System.out.printf("%d %s - mongodb exception\n", pageId, url);
-                                //e.printStackTrace();
-                            }
-                            updateLastScanDateFromPages(updateStatement, pageId);
-                        } catch (IOException e) {
-                            System.out.printf("%d %s is unavailable\n", pageId, url);
-                        }
 
+                try {
+                    if (pageDAO.countBySiteId(site.getSiteId()) == 1) {
+                        Page page = pageDAO.findBySiteId(site.getSiteId()).getFirst();
+                        if (page.getLastScanDateTime() == null) {
+                            String url = page.getUrl() + "/robots.txt";
+                            if (httpPageHandler.getHttpUtilities().siteAvailable(url)) {
+                                pageDAO.insertNew(new Page(site.getSiteId(), url, new Date()));
+                                pageDAO.updateLastScanDateTime(page.getPageId());
+                            }
+                        }
                     }
-                    updateStatement.executeBatch();
                 } catch (SQLException e) {
                     e.printStackTrace();
                 } finally {
@@ -230,17 +66,175 @@ public class DataBaseUtilities {
         service.shutdown();
     }
 
-    public int getCountOfPages() {
-        final String selectRequest = "select count(*) from pages where url not like \"%sitemap%\" and url not like \"%robots.txt%\";";
-        int count = 0;
-        try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(selectRequest)) {
-            while (resultSet.next())
-                count = resultSet.getInt("count(*)");
-        } catch (SQLException e) {
+    public void addRootSitemaps() {
+        PageDAO pageDAO = new PageDAOImp();
+        LinkedList<Page> pages = pageDAO.findByUrlAndLastScanDateTime("%robots.txt", "current_date()");
+        ExecutorService service = Executors.newFixedThreadPool(10);
+        while (pages.size() != 0) {
+            CountDownLatch latch = new CountDownLatch(pages.size());
+            while (pages.size() != 0) {
+                Page page = pages.pop();
+                service.submit(() -> {
+                    System.out.println(Thread.currentThread().getName() + " - start");
+                    Set<String> rootSitemaps = httpPageHandler.getRootSitemaps(page.getUrl());
+                    try {
+                        for (String sitemap : rootSitemaps) {
+                            pageDAO.insert(new Page(page.getSiteId(), sitemap, new Date()));
+                        }
+                        pageDAO.updateLastScanDateTime(page.getPageId());
+                    } catch (SQLException e) {
+                        e.printStackTrace();
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            if (pages.size() == 0) pages = pageDAO.findByUrlAndLastScanDateTime("%robots.txt", "current_date()");
+        }
+        service.shutdown();
+    }
+
+    public void addSitemapsAndArticles() {
+        PageDAO pageDAO = new PageDAOImp();
+        LinkedList<Page> pages = pageDAO.findByUrlAndLastScanDateTime("%sitemap%", "current_date()");
+        ExecutorService service = Executors.newFixedThreadPool(100);
+        while (pages.size() != 0) {
+            CountDownLatch latch = new CountDownLatch(pages.size());
+            while (pages.size() != 0) {
+                Page page = pages.pop();
+                service.submit(() -> {
+                    System.out.println(Thread.currentThread().getName() + " - start");
+                    Map<String, Date> urls = httpPageHandler.wrapper(page.getUrl());
+                    LinkedList<Page> pages2 = new LinkedList<>();
+                    for (Map.Entry<String, Date> urlDate : urls.entrySet()) {
+                        pages2.add(new Page(page.getSiteId(), urlDate.getKey(), urlDate.getValue()));
+                    }
+                    try {
+                        pageDAO.insertNew(pages2);
+                        pageDAO.updateLastScanDateTime(page.getPageId());
+                        System.out.println(Thread.currentThread().getName() + " - end");
+                    } catch (SQLException e) {
+                        e.printStackTrace();
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            System.out.println(pages.size());
+            if (pages.size() == 0) pages = pageDAO.findByUrlAndLastScanDateTime("%sitemap%", "current_date()");
+        }
+        service.shutdown();
+    }
+
+    public void handlePages() {
+        MongoClient mongoClient = new MongoClient("localhost");
+        MongoDatabase database = mongoClient.getDatabase("urlwordsrate");
+        MongoCollection<Document> collection = database.getCollection("rating");
+        PageParser pageParser = new PageParser();
+        PageDAO pageDAO = new PageDAOImp();
+        count = new AtomicInteger(0);
+        LinkedList<Page> pages = pageDAO.findByNotMatchUrlsAndMatchLastScanDateTime("%sitemap%", "%robots.txt%", "null", count.get());
+        ExecutorService service = Executors.newFixedThreadPool(50);
+        while (pages.size() != 0) {
+            CountDownLatch latch = new CountDownLatch(pages.size());
+            while (pages.size() != 0) {
+                Page page = pages.pop();
+                service.submit(() -> {
+                    try {
+                        Map<String, Integer> map = pageParser.countWords(page.getUrl());
+                        Document doc = new Document();
+                        map.forEach((key, value) -> doc.append(key, value));
+                        try {
+                            collection.updateOne(eq("_id", page.getPageId()), set("words", doc), new UpdateOptions().upsert(true));
+                            System.out.printf("%d %s is handled\n", page.getPageId(), page.getUrl());
+                        } catch (MongoException e) {
+                            System.out.printf("%d %s - mongodb exception\n", page.getPageId(), page.getUrl());
+                        }
+                        pageDAO.updateLastScanDateTime(page.getPageId());
+                    } catch (IOException e) {
+                        count.incrementAndGet();
+                        System.out.printf("%d %s is unavailable\n", page.getPageId(), page.getUrl());
+                    } finally {
+                        latch.countDown();
+                    }
+                });
+            }
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            if (pages.size() == 0)
+                pages = pageDAO.findByNotMatchUrlsAndMatchLastScanDateTime("%sitemap%", "%robots.txt%", "null", count.get());
+        }
+        service.shutdown();
+    }
+
+    private LinkedList<PersonAndKeywords> getPersonsAndKeywords() {
+        PersonDAOImp personDAOImp = new PersonDAOImp();
+        KeywordDAOImp keywordDAOImp = new KeywordDAOImp();
+        LinkedList<PersonAndKeywords> list = new LinkedList<>();
+        for (Person person : personDAOImp.findAll()) {
+            List<String> keywords = new ArrayList<>();
+            keywords.add(person.getName());
+            keywordDAOImp.findByPersonId(person.getPersonId()).forEach(keyword -> keywords.add(keyword.getName()));
+            list.add(new PersonAndKeywords(person.getPersonId(), keywords));
+        }
+        return list;
+    }
+
+    public void fillPersonsPageRank() {
+        LinkedList<PersonAndKeywords> list = getPersonsAndKeywords();
+        CountDownLatch latch = new CountDownLatch(list.size());
+        ExecutorService service = Executors.newFixedThreadPool(10);
+        MongoClient mongoClient = new MongoClient("localhost");
+        MongoDatabase database = mongoClient.getDatabase("urlwordsrate");
+        MongoCollection<Document> collection = database.getCollection("rating");
+        while (list.size() != 0) {
+            PersonAndKeywords personAndKeywords = list.pop();
+            service.submit(() -> {
+                List<Bson> bsonList = new ArrayList<>();
+                for (String word : personAndKeywords.getKeywords()) {
+                    bsonList.add(exists("words." + word, true));
+                }
+                PersonPageRankDAOImp personPageRankDAOImp = new PersonPageRankDAOImp();
+                try {
+                    for (Document doc : collection.find(or(bsonList))) {
+                        int count = 0;
+                        for (String word : personAndKeywords.getKeywords()) {
+                            count += doc.get("words", new Document()).getInteger(word, 0);
+                        }
+                        try {
+                            personPageRankDAOImp.insert(new PersonsPageRank(personAndKeywords.getPersonId(),
+                                    doc.getInteger("_id"), count));
+                            System.out.printf("personID: %s, pageID: %d, count: %d is added to personspagerank\n",
+                                    personAndKeywords.getPersonId(), doc.getInteger("_id"), count);
+                        } catch (SQLException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                } catch (MongoException e) {
+                    e.printStackTrace();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return count;
+        service.shutdown();
     }
 }
