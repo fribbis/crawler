@@ -1,13 +1,10 @@
 package http;
 
-import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
-import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpHead;
 import org.apache.http.impl.client.HttpClientBuilder;
-import org.apache.http.util.EntityUtils;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -77,10 +74,12 @@ public class HttpUtilities {
 //                    HttpResponse response = client.execute(request);
 //                    page.append(EntityUtils.toString(response.getEntity()));
                     BufferedInputStream bis = new BufferedInputStream(new URL(url).openStream());
-                    byte[] buffer = new byte[1024];
+                    //byte[] buffer = new byte[1024];
                     int count = 0;
-                    while ((count = bis.read(buffer, 0, 1024)) != -1) {
-                        page.append(new String(buffer), 0, count);
+                    while (count != -1) {
+                        byte[] buffer = new byte[1024];
+                        count = bis.read(buffer, 0, 1024);
+                        page.append(new String(buffer).trim());
                     }
                 }
             } catch (IOException e) {
