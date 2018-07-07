@@ -2,14 +2,25 @@ package database;
 
 import org.apache.commons.dbcp2.BasicDataSource;
 
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.util.Properties;
+
 public class DataSource {
-    public final static String URL = "jdbc:mariadb://localhost/searchandratewords";
-    public final static String USER = "root";
-    public final static String PASSWORD = null;
 
     private static BasicDataSource dataSource;
 
     public static BasicDataSource getDataSource() {
+        Properties properties = new Properties();
+        try (FileInputStream config = new FileInputStream("config.properties")) {
+            properties.load(config);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        String URL = properties.getProperty("mariadb.url");
+        String USER = properties.getProperty("mariadb.user");
+        String PASSWORD = properties.getProperty("mariadb.password");
 
         if (dataSource == null) {
             dataSource = new BasicDataSource();
