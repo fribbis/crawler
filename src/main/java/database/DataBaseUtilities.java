@@ -144,7 +144,7 @@ public class DataBaseUtilities {
         PageDAO pageDAO = new PageDAOImp();
         count = new AtomicInteger(0);
         LinkedList<Page> pages = pageDAO.findByNotMatchUrlsAndMatchLastScanDateTime("%sitemap%", "%robots.txt%", "null", count.get());
-        ExecutorService service = Executors.newFixedThreadPool(50);
+        ExecutorService service = Executors.newFixedThreadPool(100);
         while (pages.size() != 0) {
             CountDownLatch latch = new CountDownLatch(pages.size());
             while (pages.size() != 0) {
@@ -178,6 +178,7 @@ public class DataBaseUtilities {
                 pages = pageDAO.findByNotMatchUrlsAndMatchLastScanDateTime("%sitemap%", "%robots.txt%", "null", count.get());
         }
         service.shutdown();
+        mongoClient.close();
     }
 
     private LinkedList<PersonAndKeywords> getPersonsAndKeywords() {
@@ -236,5 +237,6 @@ public class DataBaseUtilities {
             e.printStackTrace();
         }
         service.shutdown();
+        mongoClient.close();
     }
 }

@@ -193,7 +193,7 @@ public class PageDAOImp implements PageDAO {
         final String request = "insert into pages (URL, siteID, foundDateTime) values (?, ?, ?) " +
                 "on duplicate key update " +
                 "lastScanDate = case when foundDateTime < STR_TO_DATE(?, \"%Y-%m-%d %H:%i:%s\")" +
-                "then null else current_timestamp() end, " +
+                "then null else lastScanDate end, " +
                 "foundDateTime = case when foundDateTime < STR_TO_DATE(?, \"%Y-%m-%d %H:%i:%s\") " +
                 "then ? else foundDateTime end;";
         try (Connection connection = dataSource.getConnection();
