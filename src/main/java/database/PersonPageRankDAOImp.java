@@ -1,6 +1,5 @@
 package database;
 
-import http.DateTimeConverter;
 import org.apache.commons.dbcp2.BasicDataSource;
 
 import java.sql.Connection;
@@ -28,8 +27,6 @@ public class PersonPageRankDAOImp implements PersonPageRankDAO {
             preparedStatement.setInt(4, rank);
             preparedStatement.setInt(5, rank);
             preparedStatement.execute();
-        } catch (SQLException e) {
-            throw new SQLException();
         }
     }
 }

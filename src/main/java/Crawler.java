@@ -1,7 +1,10 @@
 import database.DataBaseUtilities;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class Crawler {
     static private DataBaseUtilities dataBaseUtilities;
+    private  static Logger logger = LogManager.getLogger(Crawler.class);
 
     public static void main(String[] args) {
         dataBaseUtilities = new DataBaseUtilities();
@@ -23,29 +26,29 @@ public class Crawler {
                     updatePersons();
                     break;
                 default:
-                    System.out.println("Wrong argument.");
+                    logger.warn("Wrong argument.");
             }
         }
-        else System.out.println("Need one argument (--updatepersons or --updatepages or --handlepages or --all)");
+        else logger.warn("Need one argument (--updatepersons or --updatepages or --handlepages or --all)");
     }
 
     static void updatePersons() {
-        System.out.println("Runnig update for persons:");
+        logger.info("Runnig update for persons:");
         dataBaseUtilities.fillPersonsPageRank();
-        System.out.println("End: persons are updated");
+        logger.info("End: persons are updated");
     }
 
     static void updatePages() {
-        System.out.println("Runnig updade for pages:");
+        logger.info("Runnig updade for pages:");
         dataBaseUtilities.addRobotsTxt();
         dataBaseUtilities.addRootSitemaps();
         dataBaseUtilities.addSitemapsAndArticles();
-        System.out.println("End: pages are updated");
+        logger.info("End: pages are updated");
     }
 
     static void handlePages() {
-        System.out.println("Running handle for pages:");
+        logger.info("Running handle for pages:");
         dataBaseUtilities.handlePages();
-        System.out.println("End: pages are handled");
+        logger.info("End: pages are handled");
     }
 }

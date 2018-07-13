@@ -5,10 +5,14 @@ import com.mongodb.MongoException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.UpdateOptions;
+import http.DateTimeConverter;
 import http.HttpPageHandler;
 import http.PageParser;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.bson.Document;
 import org.bson.conversions.Bson;
+import org.jsoup.HttpStatusException;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -23,7 +27,7 @@ import static com.mongodb.client.model.Updates.set;
 
 public class DataBaseUtilities {
 
-
+    private  static Logger logger = LogManager.getLogger(DataBaseUtilities.class);
     private HttpPageHandler httpPageHandler;
     private AtomicInteger count;
 
@@ -52,7 +56,7 @@ public class DataBaseUtilities {
                         }
                     }
                 } catch (SQLException e) {
-                    e.printStackTrace();
+                    logger.error("SQLException:", e);
                 } finally {
                     latch.countDown();
                 }
@@ -61,29 +65,29 @@ public class DataBaseUtilities {
         try {
             latch.await();
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            logger.error("InterruptedException:", e);
         }
         service.shutdown();
     }
 
     public void addRootSitemaps() {
         PageDAO pageDAO = new PageDAOImp();
-        LinkedList<Page> pages = pageDAO.findByUrlAndLastScanDateTime("%robots.txt", "current_date()");
+        String date = DateTimeConverter.convertDateToString(new Date());
+        LinkedList<Page> pages = pageDAO.findByUrlAndLastScanDateTime("%robots.txt", date);
         ExecutorService service = Executors.newFixedThreadPool(10);
         while (pages.size() != 0) {
             CountDownLatch latch = new CountDownLatch(pages.size());
             while (pages.size() != 0) {
                 Page page = pages.pop();
                 service.submit(() -> {
-                    System.out.println(Thread.currentThread().getName() + " - start");
                     Set<String> rootSitemaps = httpPageHandler.getRootSitemaps(page.getUrl());
                     try {
                         for (String sitemap : rootSitemaps) {
-                            pageDAO.insert(new Page(page.getSiteId(), sitemap, new Date()));
+                            pageDAO.insertNew(new Page(page.getSiteId(), sitemap, new Date()));
                         }
                         pageDAO.updateLastScanDateTime(page.getPageId());
                     } catch (SQLException e) {
-                        e.printStackTrace();
+                        logger.error("SQLException:", e);
                     } finally {
                         latch.countDown();
                     }
@@ -92,23 +96,23 @@ public class DataBaseUtilities {
             try {
                 latch.await();
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                logger.error("InterruptedException:", e);
             }
-            if (pages.size() == 0) pages = pageDAO.findByUrlAndLastScanDateTime("%robots.txt", "current_date()");
+            if (pages.size() == 0) pages = pageDAO.findByUrlAndLastScanDateTime("%robots.txt", date);
         }
         service.shutdown();
     }
 
     public void addSitemapsAndArticles() {
         PageDAO pageDAO = new PageDAOImp();
-        LinkedList<Page> pages = pageDAO.findByUrlAndLastScanDateTime("%sitemap%", "current_date()");
+        String date = DateTimeConverter.convertDateToString(new Date());
+        LinkedList<Page> pages = pageDAO.findByUrlAndLastScanDateTime("%sitemap%", date);
         ExecutorService service = Executors.newFixedThreadPool(100);
         while (pages.size() != 0) {
             CountDownLatch latch = new CountDownLatch(pages.size());
             while (pages.size() != 0) {
                 Page page = pages.pop();
                 service.submit(() -> {
-                    System.out.println(Thread.currentThread().getName() + " - start");
                     Map<String, Date> urls = httpPageHandler.wrapper(page.getUrl());
                     LinkedList<Page> pages2 = new LinkedList<>();
                     for (Map.Entry<String, Date> urlDate : urls.entrySet()) {
@@ -117,9 +121,8 @@ public class DataBaseUtilities {
                     try {
                         pageDAO.insertNew(pages2);
                         pageDAO.updateLastScanDateTime(page.getPageId());
-                        System.out.println(Thread.currentThread().getName() + " - end");
                     } catch (SQLException e) {
-                        e.printStackTrace();
+                        logger.error("SQLException:", e);
                     } finally {
                         latch.countDown();
                     }
@@ -128,10 +131,9 @@ public class DataBaseUtilities {
             try {
                 latch.await();
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                logger.error("InterruptedException:", e);
             }
-            System.out.println(pages.size());
-            if (pages.size() == 0) pages = pageDAO.findByUrlAndLastScanDateTime("%sitemap%", "current_date()");
+            if (pages.size() == 0) pages = pageDAO.findByUrlAndLastScanDateTime("%sitemap%", date);
         }
         service.shutdown();
     }
@@ -151,19 +153,23 @@ public class DataBaseUtilities {
                 Page page = pages.pop();
                 service.submit(() -> {
                     try {
-                        Map<String, Integer> map = pageParser.countWords(page.getUrl());
-                        Document doc = new Document();
-                        map.forEach((key, value) -> doc.append(key, value));
                         try {
-                            collection.updateOne(eq("_id", page.getPageId()), set("words", doc), new UpdateOptions().upsert(true));
-                            System.out.printf("%d %s is handled\n", page.getPageId(), page.getUrl());
-                        } catch (MongoException e) {
-                            System.out.printf("%d %s - mongodb exception\n", page.getPageId(), page.getUrl());
+                            Map<String, Integer> map = pageParser.countWords(page.getUrl());
+                            Document doc = new Document();
+                            map.forEach((key, value) -> doc.append(key, value));
+                            try {
+                                collection.updateOne(eq("_id", page.getPageId()), set("words", doc), new UpdateOptions().upsert(true));
+                                logger.info(String.format("%d %s is handled\n", page.getPageId(), page.getUrl()));
+                            } catch (MongoException e) {
+                                logger.error(String.format("%d %s - mongodb exception\n", page.getPageId(), page.getUrl()));
+                            }
+                        } catch (HttpStatusException e) {
+                            logger.error(String.format("%d %s is unavailable\n", page.getPageId(), page.getUrl()));
                         }
                         pageDAO.updateLastScanDateTime(page.getPageId());
                     } catch (IOException e) {
                         count.incrementAndGet();
-                        System.out.printf("%d %s is unavailable\n", page.getPageId(), page.getUrl());
+                        logger.error(String.format("%d %s is not connection\n", page.getPageId(), page.getUrl()));
                     } finally {
                         latch.countDown();
                     }
@@ -172,7 +178,7 @@ public class DataBaseUtilities {
             try {
                 latch.await();
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                logger.error("InterruptedException:", e);
             }
             if (pages.size() == 0)
                 pages = pageDAO.findByNotMatchUrlsAndMatchLastScanDateTime("%sitemap%", "%robots.txt%", "null", count.get());
@@ -218,14 +224,14 @@ public class DataBaseUtilities {
                         try {
                             personPageRankDAOImp.insert(new PersonsPageRank(personAndKeywords.getPersonId(),
                                     doc.getInteger("_id"), count));
-                            System.out.printf("personID: %s, pageID: %d, count: %d is added to personspagerank\n",
-                                    personAndKeywords.getPersonId(), doc.getInteger("_id"), count);
+                            logger.info(String.format("personID: %s, pageID: %d, count: %d is added to personspagerank\n",
+                                    personAndKeywords.getPersonId(), doc.getInteger("_id"), count));
                         } catch (SQLException e) {
                             e.printStackTrace();
                         }
                     }
                 } catch (MongoException e) {
-                    e.printStackTrace();
+                    logger.error("MongoException:", e);
                 } finally {
                     latch.countDown();
                 }
@@ -234,7 +240,7 @@ public class DataBaseUtilities {
         try {
             latch.await();
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            logger.error("InterruptedException", e);
         }
         service.shutdown();
         mongoClient.close();

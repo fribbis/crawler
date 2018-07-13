@@ -5,6 +5,8 @@ import org.apache.http.client.config.CookieSpecs;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.HttpHead;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -16,6 +18,7 @@ import java.util.zip.GZIPInputStream;
 
 public class HttpUtilities {
     private HttpClient client;
+    private  static Logger logger = LogManager.getLogger(HttpUtilities.class);
 
     public HttpUtilities() {
         client = HttpClientBuilder.create().setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build()).build();
@@ -83,8 +86,7 @@ public class HttpUtilities {
                     }
                 }
             } catch (IOException e) {
-                System.out.println("Error " + url);
-                e.printStackTrace();
+                logger.error("IOException:", e);
             }
         }
         return page;

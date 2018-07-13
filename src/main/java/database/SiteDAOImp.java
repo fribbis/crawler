@@ -1,6 +1,8 @@
 package database;
 
 import org.apache.commons.dbcp2.BasicDataSource;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -11,6 +13,7 @@ import java.util.LinkedList;
 public class SiteDAOImp implements SiteDAO {
 
     private BasicDataSource dataSource;
+    private  static Logger logger = LogManager.getLogger(SiteDAOImp.class);
 
     public SiteDAOImp() {
         dataSource = DataSource.getDataSource();
@@ -31,7 +34,7 @@ public class SiteDAOImp implements SiteDAO {
                 sites.add(site);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return sites;
     }

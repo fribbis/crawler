@@ -1,7 +1,8 @@
 package database;
 
-import http.DateTimeConverter;
 import org.apache.commons.dbcp2.BasicDataSource;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -11,6 +12,7 @@ import java.util.LinkedList;
 
 public class PersonDAOImp implements PersonDAO {
     private BasicDataSource dataSource;
+    private  static Logger logger = LogManager.getLogger(PersonDAOImp.class);
 
     public PersonDAOImp() {
         dataSource = DataSource.getDataSource();
@@ -31,7 +33,7 @@ public class PersonDAOImp implements PersonDAO {
                 persons.add(person);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return persons;
     }
@@ -50,7 +52,7 @@ public class PersonDAOImp implements PersonDAO {
                 person.setAddedBy(resultSet.getInt("addedBy"));
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return person;
     }

@@ -2,6 +2,8 @@ package database;
 
 import http.DateTimeConverter;
 import org.apache.commons.dbcp2.BasicDataSource;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.sql.*;
 import java.util.LinkedList;
@@ -10,6 +12,7 @@ import java.util.List;
 public class PageDAOImp implements PageDAO {
 
     private BasicDataSource dataSource;
+    private  static Logger logger = LogManager.getLogger(PageDAOImp.class);
 
     public PageDAOImp() {
         dataSource = DataSource.getDataSource();
@@ -26,7 +29,7 @@ public class PageDAOImp implements PageDAO {
             count = resultSet.getInt("count(*)");
 
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return count;
     }
@@ -53,7 +56,7 @@ public class PageDAOImp implements PageDAO {
             }
 
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return pages;
     }
@@ -61,9 +64,9 @@ public class PageDAOImp implements PageDAO {
     @Override
     public LinkedList<Page> findByUrlAndLastScanDateTime(String url, String lastScanDateTime) {
         LinkedList<Page> pages = new LinkedList<>();
-        final String request = String.format("select * from pages where URL like \"%s\" " +
-//                "and lastScanDate is %s limit 1000;", url, lastScanDateTime);
-                "and (lastScanDate < %s or lastScanDate is null) limit 1000;", url, lastScanDateTime);
+        final String request = String.format("select * from pages where URL like \"%s\" and " +
+                "(lastScanDate < STR_TO_DATE(\"%s\", \"%%Y-%%m-%%d %%H:%%i:%%s\") or " +
+                "lastScanDate is null) limit 1000;", url, lastScanDateTime);
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery(request)) {
@@ -76,12 +79,12 @@ public class PageDAOImp implements PageDAO {
                     page.setFoundDateTime(DateTimeConverter.convertStringToDate(resultSet.getString("foundDateTime")));
                     //page.setLastScanDateTime(DateTimeConverter.convertStringToDate(resultSet.getString("lastScanDate")));
                 } catch (NullPointerException e) {
-                    e.printStackTrace();
+                    logger.error("NullPointerException:", e);
                 }
                 pages.add(page);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return pages;
     }
@@ -102,12 +105,12 @@ public class PageDAOImp implements PageDAO {
                     page.setFoundDateTime(DateTimeConverter.convertStringToDate(resultSet.getString("foundDateTime")));
                     //page.setLastScanDateTime(DateTimeConverter.convertStringToDate(resultSet.getString("lastScanDate")));
                 } catch (NullPointerException e) {
-                    e.printStackTrace();
+                    logger.error("NullPointerException:", e);
                 }
                 pages.add(page);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return pages;
     }
@@ -120,7 +123,7 @@ public class PageDAOImp implements PageDAO {
             preparedStatement.setInt(1, pageId);
             preparedStatement.execute();
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
     }
 
@@ -135,7 +138,7 @@ public class PageDAOImp implements PageDAO {
             }
             preparedStatement.executeBatch();
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
     }
 
@@ -182,7 +185,7 @@ public class PageDAOImp implements PageDAO {
                 preparedStatement.setInt(2, page.getSiteId());
                 preparedStatement.setString(3, DateTimeConverter.convertDateToString(page.getFoundDateTime()));
                 preparedStatement.addBatch();
-                System.out.printf("Page %s is added\n", page.getUrl());
+                logger.info(String.format("Page %s is added\n", page.getUrl()));
             }
             preparedStatement.executeBatch();
         }
@@ -207,9 +210,9 @@ public class PageDAOImp implements PageDAO {
                 preparedStatement.setString(5, date);
                 preparedStatement.setString(6, date);
                 preparedStatement.addBatch();
-                System.out.printf("Page %s is added\n", page.getUrl());
+                logger.info(String.format("Page %s is added\n", page.getUrl()));
             }
-            preparedStatement.setQueryTimeout(30);
+            preparedStatement.setQueryTimeout(900);
             preparedStatement.executeBatch();
         }
     }

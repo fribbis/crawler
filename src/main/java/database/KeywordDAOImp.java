@@ -1,6 +1,8 @@
 package database;
 
 import org.apache.commons.dbcp2.BasicDataSource;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -11,6 +13,7 @@ import java.util.List;
 
 public class KeywordDAOImp implements KeywordDAO {
     private BasicDataSource dataSource;
+    private  static Logger logger = LogManager.getLogger(KeywordDAOImp.class);
 
     public KeywordDAOImp() {
         dataSource = DataSource.getDataSource();
@@ -31,7 +34,7 @@ public class KeywordDAOImp implements KeywordDAO {
                 keywords.add(keyword);
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            logger.error("SQLException:", e);
         }
         return keywords;
     }

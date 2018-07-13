@@ -1,11 +1,16 @@
 package http;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.TimeZone;
 
 public class DateTimeConverter {
+    private  static Logger logger = LogManager.getLogger(DateTimeConverter.class);
+
     public static Date convertStringToDate(String dateString) {
         Date dateTime = new Date();
         try {
@@ -23,7 +28,7 @@ public class DateTimeConverter {
             }
         }
         catch (ParseException e) {
-            e.printStackTrace();
+            logger.error("ParseException:", e);
         }
         return dateTime;
     }
